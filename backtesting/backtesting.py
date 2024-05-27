@@ -1512,7 +1512,7 @@ class Backtest:
                     base_estimator=ExtraTreesRegressor(n_estimators=20, min_samples_leaf=2),
                     acq_func='LCB',
                     kappa=3,
-                    n_initial_points=n_initial_points or min(max_tries, 20 + 3 * len(kwargs)),
+                    n_initial_points=min(max_tries, n_initial_points or 20 + 3 * len(kwargs)),
                     initial_point_generator='lhs',  # 'sobel' requires n_initial_points ~ 2**N
                     callback=DeltaXStopper(9e-7),
                     random_state=random_state)

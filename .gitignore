@@ -21,3 +21,5 @@ doc/build/*
 *~*
 
 .venv/
+
+build/

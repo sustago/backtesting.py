@@ -1562,7 +1562,9 @@ class Backtest:
                     # TODO: save dtype and convert back later
                     values = values.astype(int)
 
-                if values.dtype.kind in 'iumM':
+                if len(values) == 1:
+                    variables.append(sp.Constant(value=float(values[0]), name=key))
+                elif values.dtype.kind in 'iumM':
                     variables.append(sp.Int(lower=values.min(), upper=values.max(), name=key))
                 elif values.dtype.kind == 'f' or (values.dtype.kind == 'O' and all([isinstance(v, Decimal) for v in values])):
                     variables.append(sp.Real(lower=values.min(), upper=values.max(), name=key))
@@ -1599,7 +1601,7 @@ class Backtest:
                 task_id='soc',
                 random_state=random_state,
                 initial_runs=min(max_tries, n_initial_points or 20 + 3 * len(kwargs)),
-                init_strategy='latin_hypercube',
+                # init_strategy='latin_hypercube',
             )
             history = opt.run()
             optimal_configurations = history.get_incumbents()

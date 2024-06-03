@@ -1256,6 +1256,7 @@ class Backtest:
                  random_state: Optional[int] = None,
                  n_initial_points: Optional[int] = None,
                  n_workers: int = 1,
+                 advisor_type: str = "tpe",
                  **kwargs) -> Union[pd.Series,
                                     Tuple[pd.Series, pd.Series],
                                     Tuple[pd.Series, pd.Series, dict]]:
@@ -1623,11 +1624,10 @@ class Backtest:
                 "random_state": random_state,
                 "initial_configurations": valid_initial_configs,
                 "initial_runs": initial_runs,
-                "advisor_type": "tpe",
             }
 
             if n_workers == 1:
-                opt = Optimizer(**params)
+                opt = Optimizer(advisor_type=advisor_type, **params)
             else:
                 opt = ParallelOptimizer(
                     parallel_strategy="async",

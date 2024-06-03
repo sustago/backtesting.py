@@ -1562,13 +1562,9 @@ class Backtest:
                     # TODO: save dtype and convert back later
                     values = values.astype(int)
 
-                if len(values) == 1:
-                    variables.append(sp.Constant(value=float(values[0]), name=key))
-                elif values.dtype.kind in 'iumM':
+                if values.dtype.kind in 'iumM':
                     variables.append(sp.Int(lower=values.min(), upper=values.max(), name=key))
-                elif values.dtype.kind == 'f':
-                    variables.append(sp.Real(lower=values.min(), upper=values.max(), name=key))
-                elif values.dtype.kind == 'O' and all([isinstance(v, Decimal) for v in values]):
+                elif values.dtype.kind == 'f' or (values.dtype.kind == 'O' and all([isinstance(v, Decimal) for v in values])):
                     variables.append(sp.Real(lower=values.min(), upper=values.max(), name=key))
                 else:
                     variables.append(sp.Categorical(choices=values.tolist(), name=key))

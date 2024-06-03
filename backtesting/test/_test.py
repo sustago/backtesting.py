@@ -1,7 +1,7 @@
 import inspect
 import os
 import sys
-import time
+from timeit import default_timer
 import unittest
 import warnings
 from concurrent.futures.process import ProcessPoolExecutor
@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from glob import glob
 from runpy import run_path
 from tempfile import NamedTemporaryFile, gettempdir
+from time import time
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -576,6 +577,25 @@ class TestOptimize(TestCase):
             return_optimization=False,
             return_heatmap=False,
             random_state=2)
+        self.assertIsInstance(res, pd.Series)
+
+    def test_timing(self):
+        bt = Backtest(GOOG.iloc[:100], SmaCross)
+
+        for method in ["sklearn", "openbox"]:
+            start = default_timer()
+            res = bt.optimize(
+                fast=range(2, 20), slow=np.arange(2, 20, dtype=object),
+                constraint=lambda p: p.fast < p.slow,
+                max_tries=30,
+                method='openbox',
+                return_optimization=False,
+                return_heatmap=False,
+                n_initial_points=0,
+                init_strategy='latin_hypercube',
+                random_state=2)
+            end = default_timer()
+            print(f"Method {method} took {end-start} seconds")
         self.assertIsInstance(res, pd.Series)
 
     def test_max_tries(self):

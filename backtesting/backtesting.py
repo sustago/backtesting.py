@@ -1563,7 +1563,7 @@ class Backtest:
                     values = values.astype(int)
 
                 if len(values) == 1:
-                    variables.append(sp.Constant(value=values.astype("f")[0], name=key))
+                    variables.append(sp.Constant(value=float(values[0]), name=key))
                 elif values.dtype.kind in 'iumM':
                     variables.append(sp.Int(lower=values.min(), upper=values.max(), name=key))
                 elif values.dtype.kind == 'f':

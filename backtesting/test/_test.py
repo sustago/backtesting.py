@@ -566,6 +566,18 @@ class TestOptimize(TestCase):
         self.assertEqual(-skopt_results.fun, heatmap.max())
         self.assertEqual(heatmap.index.tolist(), heatmap.dropna().index.unique().tolist())
 
+    def test_method_openbox(self):
+        bt = Backtest(GOOG.iloc[:100], SmaCross)
+        res = bt.optimize(
+            fast=range(2, 20), slow=np.arange(2, 20, dtype=object),
+            constraint=lambda p: p.fast < p.slow,
+            max_tries=30,
+            method='openbox',
+            return_optimization=False,
+            return_heatmap=False,
+            random_state=2)
+        self.assertIsInstance(res, pd.Series)
+
     def test_max_tries(self):
         bt = Backtest(GOOG.iloc[:100], SmaCross)
         OPT_PARAMS = {'fast': range(2, 10, 2), 'slow': [2, 5, 7, 9]}

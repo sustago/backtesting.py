@@ -14,12 +14,12 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from copy import copy
 from functools import lru_cache, partial
 from itertools import chain, compress, product, repeat
-from math import copysign
 from numbers import Number
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
+from math import copysign
 from numpy.random import default_rng
 
 try:
@@ -1536,12 +1536,89 @@ class Backtest:
 
             return stats if len(output) == 1 else tuple(output)
 
+        def _optimize_openbox() -> Union[pd.Series,
+                                       Tuple[pd.Series, pd.Series],
+                                       Tuple[pd.Series, pd.Series, dict]]:
+            try:
+                from openbox import space as sp, Optimizer
+            except ImportError:
+                raise ImportError("Need package 'openbox' for method='openbox'. "
+                                  "pip install openbox") from None
+
+            if return_heatmap or return_optimization:
+                raise ValueError("return_heatmap and return_optimization not supported with method='openbox'")
+
+            nonlocal max_tries
+            max_tries = (200 if max_tries is None else
+                         max(1, int(max_tries * _grid_size())) if 0 < max_tries <= 1 else
+                         max_tries)
+
+            variables = []
+            for key, values in kwargs.items():
+                values = np.asarray(values)
+                if values.dtype.kind in 'mM':  # timedelta, datetime64
+                    # these dtypes are unsupported in skopt, so convert to raw int
+                    # TODO: save dtype and convert back later
+                    values = values.astype(int)
+
+                if values.dtype.kind in 'iumM':
+                    variables.append(sp.Int(lower=values.min(), upper=values.max(), name=key))
+                elif values.dtype.kind == 'f':
+                    variables.append(sp.Real(lower=values.min(), upper=values.max(), name=key))
+                else:
+                    variables.append(sp.Categorical(choices=values.tolist(), name=key))
+
+            space = sp.Space(seed=random_state)
+            space.add_variables(variables)
+
+            def eval_run(config: sp.Configuration):
+                params = config.get_dictionary()
+                is_feasible = constraint(AttrDict(params))
+                value = 0.0
+                if is_feasible:
+                    res = self.run(**params)
+                    value = -maximize(res)
+                    if np.isnan(value):
+                        value = 0.0
+
+                result = dict()
+                result['objectives'] = [value,]
+                result['constraints'] = [-1 if is_feasible else 1,]
+                return result
+
+            opt = Optimizer(
+                eval_run,
+                space,
+                num_constraints=1,
+                num_objectives=1,
+                surrogate_type='auto',
+                acq_type='auto',
+                acq_optimizer_type='auto',
+                max_runs=max_tries,
+                task_id='soc',
+                random_state=random_state,
+                initial_runs=min(max_tries, n_initial_points or 20 + 3 * len(kwargs)),
+            )
+            history = opt.run()
+            optimal_configurations = history.get_incumbents()
+            if not len(optimal_configurations):
+                raise ValueError('No admissible parameter combinations to test')
+
+            optimal_values = optimal_configurations[0].config.get_dictionary()
+
+            stats = self.run(**optimal_values)
+            output = [stats]
+
+            return stats if len(output) == 1 else tuple(output)
+
         if method == 'grid':
             output = _optimize_grid()
         elif method == 'skopt':
             output = _optimize_skopt()
+        elif method == 'openbox':
+            output = _optimize_openbox()
         else:
-            raise ValueError(f"Method should be 'grid' or 'skopt', not {method!r}")
+            raise ValueError(f"Method should be 'grid', 'openbox' or 'skopt', not {method!r}")
         return output
 
     @staticmethod

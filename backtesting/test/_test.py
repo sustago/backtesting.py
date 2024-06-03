@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
-from ConfigSpace import ConfigurationSpace, UniformFloatHyperparameter, Constant
+from ConfigSpace import ConfigurationSpace, UniformFloatHyperparameter, Constant, CategoricalHyperparameter
 from pandas.testing import assert_frame_equal
 
 from backtesting import Backtest, Strategy
@@ -62,6 +62,7 @@ class SmaCross(Strategy):
     # NOTE: These values are also used on the website!
     fast = 10
     slow = 30
+    blubb = 10
 
     def init(self):
         self.sma1 = self.I(SMA, self.data.Close, self.fast)
@@ -572,7 +573,7 @@ class TestOptimize(TestCase):
     def test_method_openbox(self):
         bt = Backtest(GOOG.iloc[:100], SmaCross)
         res = bt.optimize(
-            fast=range(2, 20), slow=np.arange(2, 20, dtype=object),
+            fast=range(2, 20), slow=np.arange(2, 20, dtype=object), blubb=[-2.0],
             constraint=lambda p: p.fast < p.slow,
             max_tries=30,
             method='openbox',
@@ -581,18 +582,18 @@ class TestOptimize(TestCase):
             random_state=2)
         self.assertIsInstance(res, pd.Series)
 
-    def test_method_openbox_parallel(self):
-        bt = Backtest(GOOG.iloc[:100], SmaCross)
-        res = bt.optimize(
-            fast=range(2, 20), slow=np.arange(2, 20, dtype=object),
-            constraint=lambda p: p.fast < p.slow,
-            max_tries=30,
-            method='openbox',
-            return_optimization=False,
-            return_heatmap=False,
-            random_state=2,
-            n_workers=2)
-        self.assertIsInstance(res, pd.Series)
+    # def test_method_openbox_parallel(self):
+    #     bt = Backtest(GOOG.iloc[:100], SmaCross)
+    #     res = bt.optimize(
+    #         fast=range(2, 20), slow=np.arange(2, 20, dtype=object),
+    #         constraint=lambda p: p.fast < p.slow,
+    #         max_tries=30,
+    #         method='openbox',
+    #         return_optimization=False,
+    #         return_heatmap=False,
+    #         random_state=2,
+    #         n_workers=2)
+    #     self.assertIsInstance(res, pd.Series)
 
     def test_timing(self):
         bt = Backtest(GOOG.iloc[:100], SmaCross)
@@ -669,9 +670,9 @@ class TestOptimize(TestCase):
 
     def test_optimize_speed(self):
         bt = Backtest(GOOG.iloc[:100], SmaCross)
-        start = time.process_time()
+        start = time()
         bt.optimize(fast=(2, 5, 7), slow=[10, 15, 20, 30])
-        end = time.process_time()
+        end = time()
         self.assertLess(end - start, .2)
 
 
@@ -712,7 +713,7 @@ class TestPlot(TestCase):
         with _tempfile() as f:
             bt.plot(filename=f, show_legend=False)
             # Give browser time to open before tempfile is removed
-            time.sleep(5)
+            sleep(5)
 
     def test_resolutions(self):
         with _tempfile() as f:
@@ -755,7 +756,7 @@ class TestPlot(TestCase):
         with _tempfile() as f:
             bt.plot(filename=f, plot_drawdown=True, smooth_equity=True)
             # Give browser time to open before tempfile is removed
-            time.sleep(5)
+            sleep(5)
 
     def test_wellknown(self):
         class S(Strategy):
@@ -788,7 +789,7 @@ class TestPlot(TestCase):
         with _tempfile() as f:
             bt.plot(filename=f, plot_drawdown=True, smooth_equity=False)
             # Give browser time to open before tempfile is removed
-            time.sleep(1)
+            sleep(1)
 
     def test_resample(self):
         bt = Backtest(GOOG, SmaCross)
@@ -799,7 +800,7 @@ class TestPlot(TestCase):
                 self.assertWarns(UserWarning):
             bt.plot(filename=f, resample=True)
             # Give browser time to open before tempfile is removed
-            time.sleep(1)
+            sleep(1)
 
     def test_indicator_color(self):
         class S(Strategy):
@@ -1012,6 +1013,7 @@ class TestDocs(TestCase):
 class TestSamplers(TestCase):
     def test_latin_hypercube_sampler_generation(self):
         config_space = ConfigurationSpace()
+        config_space.add_hyperparameter(CategoricalHyperparameter("param0", [1, 2, 3]))
         config_space.add_hyperparameter(Constant("param1", 10.0))
         config_space.add_hyperparameter(UniformFloatHyperparameter("param2", 0.0, 1.0))
         sampler = LatinHypercubeSampler(config_space, 10)

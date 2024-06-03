@@ -1598,6 +1598,7 @@ class Backtest:
                 task_id='soc',
                 random_state=random_state,
                 initial_runs=min(max_tries, n_initial_points or 20 + 3 * len(kwargs)),
+                init_strategy='latin_hypercube',
             )
             history = opt.run()
             optimal_configurations = history.get_incumbents()

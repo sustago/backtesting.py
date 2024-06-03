@@ -5,6 +5,7 @@ module directly, e.g.
 
     from backtesting import Backtest, Strategy
 """
+from decimal import Decimal
 import multiprocessing as mp
 import os
 import sys
@@ -1564,6 +1565,8 @@ class Backtest:
                 if values.dtype.kind in 'iumM':
                     variables.append(sp.Int(lower=values.min(), upper=values.max(), name=key))
                 elif values.dtype.kind == 'f':
+                    variables.append(sp.Real(lower=values.min(), upper=values.max(), name=key))
+                elif values.dtype.kind == 'O' and all([isinstance(v, Decimal) for v in values]):
                     variables.append(sp.Real(lower=values.min(), upper=values.max(), name=key))
                 else:
                     variables.append(sp.Categorical(choices=values.tolist(), name=key))

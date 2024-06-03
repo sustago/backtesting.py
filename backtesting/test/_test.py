@@ -1019,6 +1019,8 @@ class TestSamplers(TestCase):
         sampler = LatinHypercubeSampler(config_space, 10)
         samples = sampler.generate()
         assert len(samples) == 10
+        for sample in samples:
+            sample.is_valid_configuration()
 
 
 if __name__ == '__main__':

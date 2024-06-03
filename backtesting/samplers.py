@@ -30,7 +30,7 @@ class Sampler(object):
         self.search_dims = []
         for i, param in enumerate(config_space.get_hyperparameters()):
             if isinstance(param, Constant):
-                self.search_dims.append([1.0])
+                self.search_dims.append([0.])
             elif isinstance(param, CategoricalHyperparameter):
                 self.search_dims.append(list(range(len(param.choices))))
             elif isinstance(param, UniformFloatHyperparameter):

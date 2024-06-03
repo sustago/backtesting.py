@@ -26,8 +26,6 @@ import pandas as pd
 from math import copysign
 from numpy.random import default_rng
 
-from .samplers import LatinHypercubeSampler
-
 try:
     from tqdm.auto import tqdm as _tqdm
     _tqdm = partial(_tqdm, leave=False)
@@ -1257,6 +1255,7 @@ class Backtest:
                  return_optimization: bool = False,
                  random_state: Optional[int] = None,
                  n_initial_points: Optional[int] = None,
+                 n_workers: int = 1,
                  **kwargs) -> Union[pd.Series,
                                     Tuple[pd.Series, pd.Series],
                                     Tuple[pd.Series, pd.Series, dict]]:
@@ -1546,7 +1545,8 @@ class Backtest:
                                        Tuple[pd.Series, pd.Series],
                                        Tuple[pd.Series, pd.Series, dict]]:
             try:
-                from openbox import space as sp, Optimizer
+                from openbox import space as sp, Optimizer, ParallelOptimizer
+                from .samplers import LatinHypercubeSampler
             except ImportError:
                 raise ImportError("Need package 'openbox' for method='openbox'. "
                                   "pip install openbox") from None
@@ -1609,20 +1609,31 @@ class Backtest:
                 logging.warning(f'Only {len(valid_initial_configs)}/{len(initial_configs)} valid configurations are generated for initial design strategy "Latin Hypercube". ')
                 num_random_config = n_initial_points - len(valid_initial_configs)
                 valid_initial_configs += Advisor.sample_random_configs(space, num_random_config, excluded_configs=valid_initial_configs)
-            opt = Optimizer(
-                eval_run,
-                space,
-                num_constraints=1,
-                num_objectives=1,
-                surrogate_type='auto',
-                acq_type='auto',
-                acq_optimizer_type='auto',
-                max_runs=max_tries,
-                task_id='soc',
-                random_state=random_state,
-                initial_configurations=valid_initial_configs,
-                initial_runs=initial_runs,
-            )
+
+            params = {
+                "objective_function": eval_run,
+                "config_space": space,
+                "num_constraints": 1,
+                "num_objectives": 1,
+                "surrogate_type": 'auto',
+                "acq_type": 'auto',
+                "acq_optimizer_type": 'auto',
+                "max_runs": max_tries,
+                "task_id": 'soc',
+                "random_state": random_state,
+                "initial_configurations": valid_initial_configs,
+                "initial_runs": initial_runs,
+            }
+
+            if n_workers == 1:
+                opt = Optimizer(**params)
+            else:
+                opt = ParallelOptimizer(
+                    parallel_strategy="async",
+                    batch_size=n_workers,
+                    batch_strategy="default",
+                    **params
+                )
             history = opt.run()
             optimal_configurations = history.get_incumbents()
             if not len(optimal_configurations):

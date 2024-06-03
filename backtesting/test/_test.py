@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from glob import glob
 from runpy import run_path
 from tempfile import NamedTemporaryFile, gettempdir
-from time import time
+from time import time, sleep
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -87,9 +87,9 @@ class TestBacktest(TestCase):
 
     def test_run_speed(self):
         bt = Backtest(GOOG, SmaCross)
-        start = time.process_time()
+        start = time()
         bt.run()
-        end = time.process_time()
+        end = time()
         self.assertLess(end - start, .3)
 
     def test_data_missing_columns(self):
@@ -581,6 +581,19 @@ class TestOptimize(TestCase):
             random_state=2)
         self.assertIsInstance(res, pd.Series)
 
+    def test_method_openbox_parallel(self):
+        bt = Backtest(GOOG.iloc[:100], SmaCross)
+        res = bt.optimize(
+            fast=range(2, 20), slow=np.arange(2, 20, dtype=object),
+            constraint=lambda p: p.fast < p.slow,
+            max_tries=30,
+            method='openbox',
+            return_optimization=False,
+            return_heatmap=False,
+            random_state=2,
+            n_workers=2)
+        self.assertIsInstance(res, pd.Series)
+
     def test_timing(self):
         bt = Backtest(GOOG.iloc[:100], SmaCross)
 
@@ -877,7 +890,7 @@ class TestLib(TestCase):
 
             # Preview
             plot_heatmaps(heatmap, filename=f)
-            time.sleep(5)
+            sleep(5)
 
     def test_random_ohlc_data(self):
         generator = random_ohlc_data(GOOG, frac=1)

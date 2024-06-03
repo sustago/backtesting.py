@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+from ConfigSpace import ConfigurationSpace, UniformFloatHyperparameter, Constant
 from pandas.testing import assert_frame_equal
 
 from backtesting import Backtest, Strategy
@@ -33,6 +34,7 @@ from backtesting.lib import (
     random_ohlc_data,
     resample_apply,
 )
+from backtesting.samplers import LatinHypercubeSampler
 from backtesting.test import EURUSD, GOOG, SMA
 
 SHORT_DATA = GOOG.iloc[:20]  # Short data for fast tests with no indicator lag
@@ -592,7 +594,6 @@ class TestOptimize(TestCase):
                 return_optimization=False,
                 return_heatmap=False,
                 n_initial_points=0,
-                init_strategy='latin_hypercube',
                 random_state=2)
             end = default_timer()
             print(f"Method {method} took {end-start} seconds")
@@ -993,6 +994,16 @@ class TestDocs(TestCase):
         stats = Backtest(SHORT_DATA, SmaCross).run()
         for key in stats.index:
             self.assertIn(key, readme)
+
+
+class TestSamplers(TestCase):
+    def test_latin_hypercube_sampler_generation(self):
+        config_space = ConfigurationSpace()
+        config_space.add_hyperparameter(Constant("param1", 10.0))
+        config_space.add_hyperparameter(UniformFloatHyperparameter("param2", 0.0, 1.0))
+        sampler = LatinHypercubeSampler(config_space, 10)
+        samples = sampler.generate()
+        assert len(samples) == 10
 
 
 if __name__ == '__main__':

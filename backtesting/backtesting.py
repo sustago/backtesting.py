@@ -5,6 +5,7 @@ module directly, e.g.
 
     from backtesting import Backtest, Strategy
 """
+import logging
 from decimal import Decimal
 import multiprocessing as mp
 import os
@@ -18,10 +19,14 @@ from itertools import chain, compress, product, repeat
 from numbers import Number
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
+from openbox import Advisor
+
 import numpy as np
 import pandas as pd
 from math import copysign
 from numpy.random import default_rng
+
+from .samplers import LatinHypercubeSampler
 
 try:
     from tqdm.auto import tqdm as _tqdm
@@ -1589,6 +1594,21 @@ class Backtest:
                 result['constraints'] = [-1 if is_feasible else 1,]
                 return result
 
+            initial_runs = min(max_tries, n_initial_points or 20 + 3 * len(kwargs))
+            lhs = LatinHypercubeSampler(space, initial_runs, criterion='maximin')
+            initial_configs = lhs.generate(return_config=True)
+
+            valid_initial_configs = []
+            for config in initial_configs:
+                try:
+                    config.is_valid_configuration()
+                except ValueError:
+                    continue
+                valid_initial_configs.append(config)
+            if len(valid_initial_configs) != len(initial_configs):
+                logging.warning(f'Only {len(valid_initial_configs)}/{len(initial_configs)} valid configurations are generated for initial design strategy "Latin Hypercube". ')
+                num_random_config = n_initial_points - len(valid_initial_configs)
+                valid_initial_configs += Advisor.sample_random_configs(space, num_random_config, excluded_configs=valid_initial_configs)
             opt = Optimizer(
                 eval_run,
                 space,
@@ -1600,8 +1620,8 @@ class Backtest:
                 max_runs=max_tries,
                 task_id='soc',
                 random_state=random_state,
-                initial_runs=min(max_tries, n_initial_points or 20 + 3 * len(kwargs)),
-                # init_strategy='latin_hypercube',
+                initial_configurations=valid_initial_configs,
+                initial_runs=initial_runs,
             )
             history = opt.run()
             optimal_configurations = history.get_incumbents()

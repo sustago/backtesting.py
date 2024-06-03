@@ -1607,7 +1607,7 @@ class Backtest:
                 valid_initial_configs.append(config)
             if len(valid_initial_configs) != len(initial_configs):
                 logging.warning(f'Only {len(valid_initial_configs)}/{len(initial_configs)} valid configurations are generated for initial design strategy "Latin Hypercube". ')
-                num_random_config = n_initial_points - len(valid_initial_configs)
+                num_random_config = initial_runs - len(valid_initial_configs)
                 valid_initial_configs += Advisor.sample_random_configs(space, num_random_config, excluded_configs=valid_initial_configs)
 
             params = {

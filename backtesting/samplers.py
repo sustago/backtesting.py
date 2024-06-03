@@ -2,7 +2,7 @@ import numpy as np
 
 from skopt.sampler import Lhs
 from ConfigSpace import ConfigurationSpace, UniformFloatHyperparameter, UniformIntegerHyperparameter, Configuration, \
-    Constant
+    Constant, CategoricalHyperparameter
 from openbox.utils.util_funcs import check_random_state
 
 
@@ -31,6 +31,8 @@ class Sampler(object):
         for i, param in enumerate(config_space.get_hyperparameters()):
             if isinstance(param, Constant):
                 self.search_dims.append([1.0])
+            elif isinstance(param, CategoricalHyperparameter):
+                self.search_dims.append(list(range(len(param.choices))))
             elif isinstance(param, UniformFloatHyperparameter):
                 self.search_dims.append((0.0, 1.0))
             elif isinstance(param, UniformIntegerHyperparameter):

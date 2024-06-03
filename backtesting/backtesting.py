@@ -1591,7 +1591,7 @@ class Backtest:
 
                 result = dict()
                 result['objectives'] = [value,]
-                result['constraints'] = [-1 if is_feasible else 1,]
+                result['constraints'] = []
                 return result
 
             initial_runs = min(max_tries, n_initial_points or 20 + 3 * len(kwargs))
@@ -1613,7 +1613,7 @@ class Backtest:
             params = {
                 "objective_function": eval_run,
                 "config_space": space,
-                "num_constraints": 1,
+                "num_constraints": 0,
                 "num_objectives": 1,
                 "surrogate_type": 'auto',
                 "acq_type": 'auto',
@@ -1623,6 +1623,7 @@ class Backtest:
                 "random_state": random_state,
                 "initial_configurations": valid_initial_configs,
                 "initial_runs": initial_runs,
+                "advisor_type": "tpe",
             }
 
             if n_workers == 1:

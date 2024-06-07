@@ -1258,6 +1258,7 @@ class Backtest:
                  init_strategy: Literal['random', 'random_explore_first', 'latin_hypercube', 'default', 'sobol'] = 'random_explore_first',
                  n_workers: int = 1,
                  advisor_type: Literal['bo', 'tpe', 'ea', 'random', 'mcadvisor'] = "tpe",
+                 acq_type: str = 'auto',
                  **kwargs) -> Union[pd.Series,
                                     Tuple[pd.Series, pd.Series],
                                     Tuple[pd.Series, pd.Series, dict]]:
@@ -1630,7 +1631,7 @@ class Backtest:
                 "num_constraints": 0,
                 "num_objectives": 1,
                 "surrogate_type": 'auto',
-                "acq_type": 'auto',
+                "acq_type": acq_type,
                 "acq_optimizer_type": 'auto',
                 "max_runs": max_tries,
                 "task_id": 'soc',

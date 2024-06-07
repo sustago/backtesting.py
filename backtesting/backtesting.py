@@ -17,7 +17,7 @@ from copy import copy
 from functools import lru_cache, partial
 from itertools import chain, compress, product, repeat
 from numbers import Number
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type, Union, Literal
 
 from openbox import Advisor
 
@@ -1255,8 +1255,9 @@ class Backtest:
                  return_optimization: bool = False,
                  random_state: Optional[int] = None,
                  n_initial_points: Optional[int] = None,
+                 init_strategy: Literal['random', 'random_explore_first', 'latin_hypercube', 'default', 'sobol'] = 'random_explore_first',
                  n_workers: int = 1,
-                 advisor_type: str = "tpe",
+                 advisor_type: Literal['bo', 'tpe', 'ea', 'random', 'mcadvisor'] = "tpe",
                  **kwargs) -> Union[pd.Series,
                                     Tuple[pd.Series, pd.Series],
                                     Tuple[pd.Series, pd.Series, dict]]:
@@ -1552,6 +1553,10 @@ class Backtest:
                 raise ImportError("Need package 'openbox' for method='openbox'. "
                                   "pip install openbox") from None
 
+            nonlocal advisor_type
+            if advisor_type == "bo":
+                advisor_type = "default"
+
             if return_heatmap or return_optimization:
                 raise ValueError("return_heatmap and return_optimization not supported with method='openbox'")
 
@@ -1596,20 +1601,28 @@ class Backtest:
                 return result
 
             initial_runs = min(max_tries, n_initial_points or 20 + 3 * len(kwargs))
-            lhs = LatinHypercubeSampler(space, initial_runs, criterion='maximin')
-            initial_configs = lhs.generate(return_config=True)
 
-            valid_initial_configs = []
-            for config in initial_configs:
-                try:
-                    config.is_valid_configuration()
-                except ValueError:
-                    continue
-                valid_initial_configs.append(config)
-            if len(valid_initial_configs) != len(initial_configs):
-                logging.warning(f'Only {len(valid_initial_configs)}/{len(initial_configs)} valid configurations are generated for initial design strategy "Latin Hypercube". ')
-                num_random_config = initial_runs - len(valid_initial_configs)
-                valid_initial_configs += Advisor.sample_random_configs(space, num_random_config, excluded_configs=valid_initial_configs)
+            if init_strategy == 'latin_hypercube':
+                lhs = LatinHypercubeSampler(space, initial_runs, criterion='maximin')
+                initial_configs = lhs.generate(return_config=True)
+
+                valid_initial_configs = []
+                for config in initial_configs:
+                    try:
+                        config.is_valid_configuration()
+                    except ValueError:
+                        continue
+                    valid_initial_configs.append(config)
+                if len(valid_initial_configs) != len(initial_configs):
+                    logging.warning(f'Only {len(valid_initial_configs)}/{len(initial_configs)} valid configurations are generated for initial design strategy "Latin Hypercube". ')
+                    num_random_config = initial_runs - len(valid_initial_configs)
+                    valid_initial_configs += Advisor.sample_random_configs(space, num_random_config, excluded_configs=valid_initial_configs)
+
+                init_config = {
+                    "initial_configurations": valid_initial_configs,
+                }
+            else:
+                init_config = {'init_strategy': init_strategy}
 
             params = {
                 "objective_function": eval_run,
@@ -1622,9 +1635,9 @@ class Backtest:
                 "max_runs": max_tries,
                 "task_id": 'soc',
                 "random_state": random_state,
-                "initial_configurations": valid_initial_configs,
                 "initial_runs": initial_runs,
             }
+            params.update(init_config)
 
             if n_workers == 1:
                 opt = Optimizer(advisor_type=advisor_type, **params)

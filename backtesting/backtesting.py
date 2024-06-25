@@ -1260,6 +1260,7 @@ class Backtest:
                  n_workers: int = 1,
                  advisor_type: Literal['bo', 'tpe', 'ea', 'random', 'mcadvisor'] = "tpe",
                  acq_type: str = 'auto',
+                 use_constrained_model: bool = False,
                  **kwargs) -> Union[pd.Series,
                                     Tuple[pd.Series, pd.Series],
                                     Tuple[pd.Series, pd.Series, dict]]:
@@ -1608,9 +1609,12 @@ class Backtest:
                     else []
                 )
 
+                if not use_constrained_model and any([cv > 0 for cv in outcome_constraints_values]):
+                    value = 0.0
+
                 result = dict()
                 result['objectives'] = [value,]
-                result['constraints'] = outcome_constraints_values
+                result['constraints'] = outcome_constraints_values if use_constrained_model else []
                 return result
 
             initial_runs = min(max_tries, n_initial_points or 20 + 3 * len(kwargs))
@@ -1640,7 +1644,7 @@ class Backtest:
             params = {
                 "objective_function": eval_run,
                 "config_space": space,
-                "num_constraints": len(outcome_constraints or []),
+                "num_constraints": len(outcome_constraints or []) if use_constrained_model else 0,
                 "num_objectives": 1,
                 "surrogate_type": 'auto',
                 "acq_type": acq_type,

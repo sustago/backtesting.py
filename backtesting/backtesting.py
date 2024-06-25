@@ -1251,6 +1251,7 @@ class Backtest:
                  method: str = 'grid',
                  max_tries: Optional[Union[int, float]] = None,
                  constraint: Optional[Callable[[dict], bool]] = None,
+                 outcome_constraints: Optional[list[Callable[[pd.Series], bool]]] = None,
                  return_heatmap: bool = False,
                  return_optimization: bool = False,
                  random_state: Optional[int] = None,
@@ -1587,18 +1588,29 @@ class Backtest:
             space.add_variables(variables)
 
             def eval_run(config: sp.Configuration):
-                params = config.get_dictionary()
-                is_feasible = constraint(AttrDict(params))
                 value = 0.0
-                if is_feasible:
+                res = None
+
+                params = config.get_dictionary()
+                params_feasible = constraint(AttrDict(params))
+                if params_feasible:
                     res = self.run(**params)
                     value = -maximize(res)
                     if np.isnan(value):
                         value = 0.0
 
+                outcome_constraints_values = (
+                    [
+                        c(res) if res is not None else 1
+                        for c in outcome_constraints
+                    ]
+                    if bool(outcome_constraints)
+                    else []
+                )
+
                 result = dict()
                 result['objectives'] = [value,]
-                result['constraints'] = []
+                result['constraints'] = outcome_constraints_values
                 return result
 
             initial_runs = min(max_tries, n_initial_points or 20 + 3 * len(kwargs))
@@ -1628,7 +1640,7 @@ class Backtest:
             params = {
                 "objective_function": eval_run,
                 "config_space": space,
-                "num_constraints": 0,
+                "num_constraints": len(outcome_constraints or []),
                 "num_objectives": 1,
                 "surrogate_type": 'auto',
                 "acq_type": acq_type,

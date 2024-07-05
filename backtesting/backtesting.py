@@ -1609,8 +1609,12 @@ class Backtest:
                     else []
                 )
 
-                if not use_constrained_model and any([cv > 0 for cv in outcome_constraints_values]):
-                    value = 0.0
+                # The bigger the value of an unsatisfied constraint, the worse the configuration.
+                # Hence, we replace the objective value with the sum of the unsatisfied constraints if any of them is unsatisfied.
+                # This way, the optimizer will try to find feasible configurations before optimizing the objective.
+                unsatisfied_constraints = [cv for cv in outcome_constraints_values if cv > 0]
+                if not use_constrained_model and len(unsatisfied_constraints):
+                    value = sum(unsatisfied_constraints)
 
                 result = dict()
                 result['objectives'] = [value,]

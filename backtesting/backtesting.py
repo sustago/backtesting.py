@@ -1262,6 +1262,7 @@ class Backtest:
                  acq_type: str = 'auto',
                  use_constrained_model: bool = False,
                  return_configs: int = 100,
+                 init_configs: list[dict] | None = None,
                  **kwargs) -> Tuple[pd.Series, List]:
         """
         Optimize strategy parameters to an optimal combination.
@@ -1312,6 +1313,9 @@ class Backtest:
         to a fixed integer random seed.
 
         `return_configs` is the number of close-to-optimal configurations to return.
+
+        `init_configs` can be a list of dicts with initial configurations. The number of generated
+        initial configurations will be reduced accordingly.
 
         Additional keyword arguments represent strategy arguments with
         list-like collections of possible values. For example, the following
@@ -1453,8 +1457,22 @@ class Backtest:
             initial_runs = min(max_tries, n_initial_points or 20 + 3 * len(kwargs))
 
             if init_strategy == 'latin_hypercube':
-                lhs = LatinHypercubeSampler(space, initial_runs, criterion='maximin')
-                initial_configs = lhs.generate(return_config=True)
+                given_initial_configs = []
+                if init_configs:
+                    for config in init_configs:
+                        try:
+                            given_initial_configs.append(sp.Configuration(configuration_space=space, values=config))
+                        except Exception:
+                            logging.warning("Invalid externally given initial config discovered")
+                            continue
+                initial_runs_to_generate = initial_runs - len(given_initial_configs)
+                if initial_runs_to_generate > 0:
+                    lhs = LatinHypercubeSampler(space, initial_runs_to_generate, criterion='maximin')
+                    generated_initial_configs = lhs.generate(return_config=True)
+                else:
+                    generated_initial_configs = []
+
+                initial_configs = given_initial_configs + generated_initial_configs
 
                 valid_initial_configs = []
                 for config in initial_configs:

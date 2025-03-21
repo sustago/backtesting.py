@@ -572,15 +572,39 @@ class TestOptimize(TestCase):
 
     def test_method_openbox(self):
         bt = Backtest(GOOG.iloc[:100], SmaCross)
-        res = bt.optimize(
+        res, best_configs = bt.optimize(
             fast=range(2, 20), slow=np.arange(2, 20, dtype=object), blubb=[-2.0],
             constraint=lambda p: p.fast < p.slow,
             max_tries=30,
             method='openbox',
             return_optimization=False,
             return_heatmap=False,
-            random_state=2)
+            random_state=2,
+        )
         self.assertIsInstance(res, pd.Series)
+        self.assertIsInstance(best_configs, list)
+        self.assertEqual(len(best_configs), 30)
+
+    def test_method_openbox_with_given_initial_configs(self):
+        bt = Backtest(GOOG.iloc[:100], SmaCross)
+        res, best_configs = bt.optimize(
+            fast=range(2, 20), slow=np.arange(2, 20, dtype=object), blubb=[-2.0],
+            constraint=lambda p: p.fast < p.slow,
+            max_tries=30,
+            method='openbox',
+            init_strategy='latin_hypercube',
+            init_configs=[
+                {'fast': 2, 'slow': 3, 'blubb': -2.0},
+                {'fast': 2, 'slow': 4, 'blubb': -2.0},
+                {'fast': 2, 'slow': 5, 'blubb': -2.0},
+            ],
+            return_optimization=False,
+            return_heatmap=False,
+            random_state=2,
+        )
+        self.assertIsInstance(res, pd.Series)
+        self.assertIsInstance(best_configs, list)
+        self.assertEqual(len(best_configs), 30)
 
     # def test_method_openbox_parallel(self):
     #     bt = Backtest(GOOG.iloc[:100], SmaCross)

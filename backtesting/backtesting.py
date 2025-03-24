@@ -1517,18 +1517,16 @@ class Backtest:
                     **params
                 )
             history = opt.run()
-            optimal_configurations = history.get_incumbents()
-            objs_orig = history.get_objectives(transform='none', warn_invalid_value=False)
+
             objs = history.get_objectives(transform='none', warn_invalid_value=False)
-            objs.sort(axis=0)
-            best_objs_max = max([obj[0] for obj in objs][:return_configs])
-            best_runs_mask = (objs_orig <= best_objs_max).reshape(-1)
-            best_runs_configs = [history.observations[i] for i in np.where(best_runs_mask)[0]]
+            mapped_sorted = sorted(zip(objs, history.observations), key=lambda x: x[0][0])
+            best_runs_configs = [config for _, config in mapped_sorted[:return_configs]]
+
+            optimal_configurations = history.get_incumbents()
             if not len(optimal_configurations):
                 raise ValueError('No admissible parameter combinations to test')
 
             optimal_values = optimal_configurations[0].config.get_dictionary()
-
             stats = self.run(**optimal_values)
 
             return (stats, [config.config.get_dictionary() for config in best_runs_configs])

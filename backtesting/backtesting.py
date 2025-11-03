@@ -1535,7 +1535,7 @@ class Backtest:
                 raise ValueError('No admissible parameter combinations to test')
 
             optimal_values = optimal_configurations[0].config.get_dictionary()
-            stats = self.run(**optimal_values)
+            stats = self.run(**optimal_values, fixed_params=fixed_params)
 
             return (stats, [config.config.get_dictionary() for config in best_runs_configs])
 

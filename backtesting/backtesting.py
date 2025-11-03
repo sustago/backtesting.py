@@ -1340,7 +1340,7 @@ class Backtest:
             raise ValueError('Need some strategy parameters to optimize')
 
         if isinstance(maximize, str):
-            stats = self._results if self._results is not None else self.run()
+            stats = self._results if self._results is not None else self.run(fixed_params=fixed_params)
             if maximize not in stats:
                 raise ValueError('`maximize`, if str, must match a key in pd.Series '
                                  'result of backtest.run()')

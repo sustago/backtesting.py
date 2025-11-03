@@ -1138,9 +1138,10 @@ class Backtest:
         self._strategy = strategy
         self._results: Optional[pd.Series] = None
 
-    def run(self, **kwargs) -> pd.Series:
+    def run(self, fixed_params: dict | None = None, **kwargs) -> pd.Series:
         """
         Run the backtest. Returns `pd.Series` with results and statistics.
+        `fixed_params` won't be optimized but passed to the strategy class directly.
 
         Keyword arguments are interpreted as strategy parameters.
 
@@ -1188,6 +1189,10 @@ class Backtest:
         data = _Data(self._data.copy(deep=False))
         broker: _Broker = self._broker(data=data)
         strategy: Strategy = self._strategy(broker, data, kwargs)
+
+        if fixed_params:
+            for k, v in fixed_params.items():
+                setattr(strategy, k, v)
 
         strategy.init()
         data._update()  # Strategy.init might have changed/added to data.df
@@ -1263,6 +1268,7 @@ class Backtest:
                  use_constrained_model: bool = False,
                  return_configs: int = 100,
                  init_configs: list[dict] | None = None,
+                 fixed_params: dict | None = None,
                  **kwargs) -> Tuple[pd.Series, List]:
         """
         Optimize strategy parameters to an optimal combination.
@@ -1316,6 +1322,8 @@ class Backtest:
 
         `init_configs` can be a list of dicts with initial configurations. The number of generated
         initial configurations will be reduced accordingly.
+
+        `fixed_params` is a dict with parameters that will be directly passed to the strategy init function.
 
         Additional keyword arguments represent strategy arguments with
         list-like collections of possible values. For example, the following
@@ -1428,7 +1436,7 @@ class Backtest:
                 params = config.get_dictionary()
                 params_feasible = constraint(AttrDict(params))
                 if params_feasible:
-                    res = self.run(**params)
+                    res = self.run(**params, fixed_params=fixed_params)
                     value = -maximize(res)
                     if np.isnan(value):
                         value = 0.0

@@ -1309,12 +1309,10 @@ class Backtest:
         ``current_value`` is ``float('nan')`` for pruned trials.
 
         `max_tries` is the maximal number of strategy runs to perform.
-        If `method="grid"`, this results in randomized grid search.
         If `max_tries` is a floating value between (0, 1], this sets the
         number of runs to approximately that fraction of full grid space.
         Alternatively, if integer, it denotes the absolute maximum number
-        of evaluations. If unspecified (default), grid search is exhaustive,
-        whereas for `method="skopt"`, `max_tries` is set to 200.
+        of evaluations. If unspecified, `max_tries` defaults to 200.
 
         `constraint` is a function that accepts a dict-like object of
         parameters (with values) and returns `True` when the combination

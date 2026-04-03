@@ -606,6 +606,126 @@ class TestOptimize(TestCase):
         self.assertIsInstance(best_configs, list)
         self.assertEqual(len(best_configs), 30)
 
+    def test_method_optuna(self):
+        bt = Backtest(GOOG.iloc[:100], SmaCross)
+        res, best_configs = bt.optimize(
+            fast=range(2, 20), slow=np.arange(2, 20, dtype=object), blubb=[-2.0],
+            constraint=lambda p: p.fast < p.slow,
+            max_tries=15,
+            method='optuna',
+            random_state=42,
+        )
+        self.assertIsInstance(res, pd.Series)
+        self.assertIsInstance(best_configs, list)
+        self.assertGreater(len(best_configs), 0)
+        self.assertLessEqual(len(best_configs), 15)
+
+    def test_method_optuna_return_study(self):
+        import optuna
+        bt = Backtest(GOOG.iloc[:100], SmaCross)
+        res, best_configs, study = bt.optimize(
+            fast=range(2, 20), slow=np.arange(2, 20, dtype=object),
+            constraint=lambda p: p.fast < p.slow,
+            max_tries=10,
+            method='optuna',
+            return_optimization=True,
+            random_state=42,
+        )
+        self.assertIsInstance(res, pd.Series)
+        self.assertIsInstance(study, optuna.study.Study)
+        self.assertEqual(study.direction, optuna.study.StudyDirection.MAXIMIZE)
+
+    def test_method_optuna_resume(self):
+        import optuna
+        import tempfile
+        import os
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "test_study.db")
+            storage = f"sqlite:///{db_path}"
+            study_name = "test_resume_study"
+
+            bt = Backtest(GOOG.iloc[:100], SmaCross)
+
+            # First run: 5 trials
+            res1, configs1 = bt.optimize(
+                fast=range(2, 20), slow=range(2, 20),
+                constraint=lambda p: p.fast < p.slow,
+                max_tries=5,
+                method='optuna',
+                optuna_storage=storage,
+                optuna_study_name=study_name,
+                random_state=42,
+            )
+
+            # Verify trials exist
+            study = optuna.load_study(study_name=study_name, storage=storage)
+            first_run_trials = len(study.trials)
+            self.assertGreater(first_run_trials, 0)
+            self.assertLessEqual(first_run_trials, 5)
+
+            # Resume: max_tries=10 total, should run more
+            res2, configs2 = bt.optimize(
+                fast=range(2, 20), slow=range(2, 20),
+                constraint=lambda p: p.fast < p.slow,
+                max_tries=10,
+                method='optuna',
+                optuna_storage=storage,
+                optuna_study_name=study_name,
+                random_state=42,
+            )
+
+            study = optuna.load_study(study_name=study_name, storage=storage)
+            self.assertGreater(len(study.trials), first_run_trials)
+            self.assertLessEqual(len(study.trials), 10)
+
+    def test_method_optuna_progress_callback(self):
+        bt = Backtest(GOOG.iloc[:100], SmaCross)
+        callback_calls = []
+
+        def on_progress(current, total, value):
+            callback_calls.append((current, total, value))
+
+        res, _ = bt.optimize(
+            fast=range(2, 20), slow=range(2, 20),
+            constraint=lambda p: p.fast < p.slow,
+            max_tries=10,
+            method='optuna',
+            progress_callback=on_progress,
+            random_state=42,
+        )
+        self.assertGreater(len(callback_calls), 0)
+        for current, total, value in callback_calls:
+            self.assertEqual(total, 10)
+            self.assertIsInstance(current, int)
+            self.assertIsInstance(value, float)
+
+    def test_method_optuna_auto_study_name(self):
+        import optuna
+        bt = Backtest(GOOG.iloc[:100], SmaCross)
+        _, _, study = bt.optimize(
+            fast=range(2, 20), slow=range(2, 20),
+            constraint=lambda p: p.fast < p.slow,
+            max_tries=5,
+            method='optuna',
+            return_optimization=True,
+            random_state=42,
+        )
+        self.assertTrue(study.study_name.startswith("bt_SmaCross_"))
+
+    def test_method_optuna_samplers(self):
+        bt = Backtest(GOOG.iloc[:100], SmaCross)
+        for sampler in ('tpe', 'cmaes', 'random'):
+            with self.subTest(sampler=sampler):
+                res, _ = bt.optimize(
+                    fast=range(2, 20), slow=range(2, 20),
+                    constraint=lambda p: p.fast < p.slow,
+                    max_tries=5,
+                    method='optuna',
+                    optuna_sampler=sampler,
+                    random_state=42,
+                )
+                self.assertIsInstance(res, pd.Series)
+
     # def test_method_openbox_parallel(self):
     #     bt = Backtest(GOOG.iloc[:100], SmaCross)
     #     res = bt.optimize(

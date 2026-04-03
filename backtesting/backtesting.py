@@ -6,8 +6,9 @@ module directly, e.g.
     from backtesting import Backtest, Strategy
 """
 import logging
-from decimal import Decimal
 import multiprocessing as mp
+from decimal import Decimal
+from time import time
 import os
 import sys
 import warnings
@@ -1269,6 +1270,10 @@ class Backtest:
                  return_configs: int = 100,
                  init_configs: list[dict] | None = None,
                  fixed_params: dict | None = None,
+                 optuna_storage: Optional[str] = None,
+                 optuna_study_name: Optional[str] = None,
+                 optuna_sampler: Literal['tpe', 'cmaes', 'random'] = 'tpe',
+                 progress_callback: Optional[Callable[[int, int, float], None]] = None,
                  **kwargs) -> Tuple[pd.Series, List]:
         """
         Optimize strategy parameters to an optimal combination.
@@ -1285,13 +1290,32 @@ class Backtest:
         * `"openbox"` which finds close-to-optimal strategy parameters using
           [model-based optimization], making at most `max_tries` evaluations.
 
+        * `"optuna"` which uses `Optuna <https://optuna.org/>`_ for optimization.
+          Supports optional persistence via `optuna_storage` (SQLAlchemy URL)
+          and resume of interrupted studies via `optuna_study_name`.
+
+        `optuna_storage` is an optional SQLAlchemy connection string
+        (e.g. ``"postgresql://user:pass@host/db"`` or ``"sqlite:///study.db"``).
+        If not set, optimization runs in-memory without persistence or resume.
+
+        `optuna_study_name` is an optional name for the Optuna study. If not set,
+        a name is auto-generated from the strategy class name and current timestamp.
+        When resuming, pass the same study name and storage to continue.
+
+        `optuna_sampler` selects the Optuna sampler algorithm.
+        Options: ``"tpe"`` (default), ``"cmaes"``, ``"random"``.
+
+        `progress_callback` is an optional function called after each trial
+        when using ``method='optuna'``. Signature:
+        ``(current_trial: int, max_trials: int, current_value: float)``.
+        ``current_value`` is ``float('nan')`` for pruned trials.
+        Ignored for other methods.
+
         `max_tries` is the maximal number of strategy runs to perform.
-        If `method="grid"`, this results in randomized grid search.
         If `max_tries` is a floating value between (0, 1], this sets the
         number of runs to approximately that fraction of full grid space.
         Alternatively, if integer, it denotes the absolute maximum number
-        of evaluations. If unspecified (default), grid search is exhaustive,
-        whereas for `method="skopt"`, `max_tries` is set to 200.
+        of evaluations. If unspecified, `max_tries` defaults to 200.
 
         `constraint` is a function that accepts a dict-like object of
         parameters (with values) and returns `True` when the combination
@@ -1366,8 +1390,10 @@ class Backtest:
                             "the combination of parameters is admissible or not")
         assert callable(constraint), constraint
 
-        if return_optimization and method != 'skopt':
-            raise ValueError("return_optimization=True only valid if method='skopt'")
+        if return_optimization and method not in ('skopt', 'optuna'):
+            raise ValueError(
+                "return_optimization=True only valid if method='skopt' or method='optuna'"
+            )
 
         def _tuple(x):
             return x if isinstance(x, Sequence) and not isinstance(x, str) else (x,)
@@ -1539,10 +1565,123 @@ class Backtest:
 
             return (stats, [config.config.get_dictionary() for config in best_runs_configs])
 
+        def _optimize_optuna() -> Tuple[pd.Series, List]:
+            try:
+                import optuna
+            except ImportError:
+                raise ImportError(
+                    "Need package 'optuna'. Install it with: pip install optuna"
+                ) from None
+
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+            if return_heatmap:
+                raise ValueError("return_heatmap not supported with method='optuna'")
+
+            if outcome_constraints:
+                raise ValueError("outcome_constraints not supported with method='optuna'")
+
+            # Sampler
+            sampler_map = {
+                'tpe': optuna.samplers.TPESampler,
+                'cmaes': optuna.samplers.CmaEsSampler,
+                'random': optuna.samplers.RandomSampler,
+            }
+            if optuna_sampler not in sampler_map:
+                raise ValueError(f"optuna_sampler must be one of {list(sampler_map)!r}, not {optuna_sampler!r}")
+            sampler = sampler_map[optuna_sampler](seed=random_state)
+
+            # Study name
+            study_name = optuna_study_name or f"bt_{self._strategy.__name__}_{hex(int(time()))[2:8]}"
+
+            # Create or load study
+            study = optuna.create_study(
+                study_name=study_name,
+                storage=optuna_storage,
+                direction="maximize",
+                sampler=sampler,
+                load_if_exists=True,
+            )
+
+            # Resume logic: max_tries is total count
+            total_tries = (200 if max_tries is None else
+                           max(1, int(max_tries * _grid_size())) if 0 < max_tries <= 1 else
+                           int(max_tries))
+
+            existing = len([
+                t for t in study.trials
+                if t.state in (optuna.trial.TrialState.COMPLETE,
+                               optuna.trial.TrialState.PRUNED)
+            ])
+            remaining = max(0, total_tries - existing)
+
+            # Objective
+            def objective(trial: optuna.trial.Trial):
+                params = {}
+                for key, values in kwargs.items():
+                    values = np.asarray(values)
+                    if values.dtype.kind in 'mM':
+                        values = values.astype(int)
+
+                    if len(values) == 1:
+                        params[key] = values.item()
+                    elif values.dtype.kind in 'iumM':
+                        params[key] = trial.suggest_int(key, int(values.min()), int(values.max()))
+                    elif values.dtype.kind == 'f' or (
+                        values.dtype.kind == 'O'
+                        and all(isinstance(v, Decimal) for v in values)
+                    ):
+                        params[key] = trial.suggest_float(key, float(values.min()), float(values.max()))
+                    else:
+                        params[key] = trial.suggest_categorical(key, values.tolist())
+
+                if not constraint(AttrDict(params)):
+                    raise optuna.TrialPruned()
+
+                res = self.run(**params, fixed_params=fixed_params)
+                value = maximize(res)
+
+                if np.isnan(value):
+                    raise optuna.TrialPruned()
+
+                return value
+
+            # Progress callback wrapper
+            def _optuna_callback(study, trial):
+                if progress_callback is None:
+                    return
+                value = trial.value if trial.value is not None else float('nan')
+                progress_callback(len(study.trials), total_tries, value)
+
+            # Run optimization
+            if remaining > 0:
+                study.optimize(objective, n_trials=remaining, callbacks=[_optuna_callback])
+
+            # Extract results
+            completed_trials = [
+                t for t in study.trials
+                if t.state == optuna.trial.TrialState.COMPLETE
+            ]
+
+            if not completed_trials:
+                raise ValueError('No admissible parameter combinations to test')
+
+            sorted_trials = sorted(completed_trials, key=lambda t: t.value, reverse=True)
+            best_configs = [t.params for t in sorted_trials[:return_configs]]
+
+            best_params = study.best_trial.params
+            stats = self.run(**best_params, fixed_params=fixed_params)
+
+            if return_optimization:
+                return (stats, best_configs, study)
+            return (stats, best_configs)
+
         if method == 'openbox':
             output = _optimize_openbox()
+        elif method == 'optuna':
+            output = _optimize_optuna()
         else:
-            raise ValueError(f"Method should be 'grid', 'openbox' or 'skopt', not {method!r}")
+            raise ValueError(f"Method should be 'openbox' or 'optuna', not {method!r}")
         return output
 
     @staticmethod

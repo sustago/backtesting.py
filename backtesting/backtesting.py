@@ -1269,6 +1269,10 @@ class Backtest:
                  return_configs: int = 100,
                  init_configs: list[dict] | None = None,
                  fixed_params: dict | None = None,
+                 optuna_storage: Optional[str] = None,
+                 optuna_study_name: Optional[str] = None,
+                 optuna_sampler: Literal['tpe', 'cmaes', 'random'] = 'tpe',
+                 progress_callback: Optional[Callable[[int, int, float], None]] = None,
                  **kwargs) -> Tuple[pd.Series, List]:
         """
         Optimize strategy parameters to an optimal combination.
@@ -1284,6 +1288,25 @@ class Backtest:
 
         * `"openbox"` which finds close-to-optimal strategy parameters using
           [model-based optimization], making at most `max_tries` evaluations.
+
+        * `"optuna"` which uses `Optuna <https://optuna.org/>`_ for optimization.
+          Supports optional persistence via `optuna_storage` (SQLAlchemy URL)
+          and resume of interrupted studies via `optuna_study_name`.
+
+        `optuna_storage` is an optional SQLAlchemy connection string
+        (e.g. ``"postgresql://user:pass@host/db"`` or ``"sqlite:///study.db"``).
+        If not set, optimization runs in-memory without persistence or resume.
+
+        `optuna_study_name` is an optional name for the Optuna study. If not set,
+        a name is auto-generated from the strategy class name and current timestamp.
+        When resuming, pass the same study name and storage to continue.
+
+        `optuna_sampler` selects the Optuna sampler algorithm.
+        Options: ``"tpe"`` (default), ``"cmaes"``, ``"random"``.
+
+        `progress_callback` is an optional function called after each Optuna trial
+        with signature ``(current_trial: int, max_trials: int, current_value: float)``.
+        ``current_value`` is ``float('nan')`` for pruned trials.
 
         `max_tries` is the maximal number of strategy runs to perform.
         If `method="grid"`, this results in randomized grid search.
@@ -1366,8 +1389,8 @@ class Backtest:
                             "the combination of parameters is admissible or not")
         assert callable(constraint), constraint
 
-        if return_optimization and method != 'skopt':
-            raise ValueError("return_optimization=True only valid if method='skopt'")
+        if return_optimization and method not in ('skopt', 'optuna'):
+            raise ValueError("return_optimization=True only valid if method='skopt' or method='optuna'")
 
         def _tuple(x):
             return x if isinstance(x, Sequence) and not isinstance(x, str) else (x,)
@@ -1541,8 +1564,10 @@ class Backtest:
 
         if method == 'openbox':
             output = _optimize_openbox()
+        elif method == 'optuna':
+            output = _optimize_optuna()
         else:
-            raise ValueError(f"Method should be 'grid', 'openbox' or 'skopt', not {method!r}")
+            raise ValueError(f"Method should be 'openbox' or 'optuna', not {method!r}")
         return output
 
     @staticmethod

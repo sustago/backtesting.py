@@ -1589,7 +1589,10 @@ class Backtest:
             }
             if optuna_sampler not in sampler_map:
                 raise ValueError(f"optuna_sampler must be one of {list(sampler_map)!r}, not {optuna_sampler!r}")
-            sampler = sampler_map[optuna_sampler](seed=random_state)
+            sampler_kwargs = dict(seed=random_state)
+            if optuna_sampler == 'tpe' and n_initial_points is not None:
+                sampler_kwargs['n_startup_trials'] = n_initial_points
+            sampler = sampler_map[optuna_sampler](**sampler_kwargs)
 
             # Study name
             study_name = optuna_study_name or f"bt_{self._strategy.__name__}_{hex(int(time()))[2:8]}"

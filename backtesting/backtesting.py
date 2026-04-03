@@ -7,6 +7,7 @@ module directly, e.g.
 """
 import logging
 from decimal import Decimal
+from time import time
 import multiprocessing as mp
 import os
 import sys
@@ -1559,6 +1560,110 @@ class Backtest:
             stats = self.run(**optimal_values, fixed_params=fixed_params)
 
             return (stats, [config.config.get_dictionary() for config in best_runs_configs])
+
+        def _optimize_optuna() -> Tuple[pd.Series, List]:
+            try:
+                import optuna
+            except ImportError:
+                raise ImportError(
+                    "Need package 'optuna'. Install it with: pip install optuna"
+                ) from None
+
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+            # Sampler
+            sampler_map = {
+                'tpe': optuna.samplers.TPESampler,
+                'cmaes': optuna.samplers.CmaEsSampler,
+                'random': optuna.samplers.RandomSampler,
+            }
+            sampler = sampler_map[optuna_sampler](seed=random_state)
+
+            # Study name
+            study_name = optuna_study_name or f"bt_{self._strategy.__name__}_{hex(int(time()))[2:8]}"
+
+            # Create or load study
+            study = optuna.create_study(
+                study_name=study_name,
+                storage=optuna_storage,
+                direction="maximize",
+                sampler=sampler,
+                load_if_exists=True,
+            )
+
+            # Resume logic: max_tries is total count
+            nonlocal max_tries
+            max_tries = (200 if max_tries is None else
+                         max(1, int(max_tries * _grid_size())) if 0 < max_tries <= 1 else
+                         int(max_tries))
+
+            existing = len([
+                t for t in study.trials
+                if t.state in (optuna.trial.TrialState.COMPLETE,
+                               optuna.trial.TrialState.PRUNED)
+            ])
+            remaining = max(0, max_tries - existing)
+
+            # Objective
+            def objective(trial: optuna.trial.Trial):
+                params = {}
+                for key, values in kwargs.items():
+                    values = np.asarray(values)
+                    if values.dtype.kind in 'mM':
+                        values = values.astype(int)
+
+                    if len(values) == 1:
+                        params[key] = values.item()
+                    elif values.dtype.kind in 'iumM':
+                        params[key] = trial.suggest_int(key, int(values.min()), int(values.max()))
+                    elif values.dtype.kind == 'f' or (
+                        values.dtype.kind == 'O'
+                        and all(isinstance(v, Decimal) for v in values)
+                    ):
+                        params[key] = trial.suggest_float(key, float(values.min()), float(values.max()))
+                    else:
+                        params[key] = trial.suggest_categorical(key, values.tolist())
+
+                if not constraint(AttrDict(params)):
+                    raise optuna.TrialPruned()
+
+                res = self.run(**params, fixed_params=fixed_params)
+                value = maximize(res)
+
+                if np.isnan(value):
+                    raise optuna.TrialPruned()
+
+                return value
+
+            # Progress callback wrapper
+            def _optuna_callback(study, trial):
+                if progress_callback is None:
+                    return
+                value = trial.value if trial.value is not None else float('nan')
+                progress_callback(len(study.trials), max_tries, value)
+
+            # Run optimization
+            if remaining > 0:
+                study.optimize(objective, n_trials=remaining, callbacks=[_optuna_callback])
+
+            # Extract results
+            completed_trials = [
+                t for t in study.trials
+                if t.state == optuna.trial.TrialState.COMPLETE
+            ]
+
+            if not completed_trials:
+                raise ValueError('No admissible parameter combinations to test')
+
+            sorted_trials = sorted(completed_trials, key=lambda t: t.value, reverse=True)
+            best_configs = [t.params for t in sorted_trials[:return_configs]]
+
+            best_params = study.best_trial.params
+            stats = self.run(**best_params, fixed_params=fixed_params)
+
+            if return_optimization:
+                return (stats, best_configs, study)
+            return (stats, best_configs)
 
         if method == 'openbox':
             output = _optimize_openbox()

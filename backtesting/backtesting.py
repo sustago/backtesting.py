@@ -6,9 +6,9 @@ module directly, e.g.
     from backtesting import Backtest, Strategy
 """
 import logging
+import multiprocessing as mp
 from decimal import Decimal
 from time import time
-import multiprocessing as mp
 import os
 import sys
 import warnings
@@ -1389,7 +1389,9 @@ class Backtest:
         assert callable(constraint), constraint
 
         if return_optimization and method not in ('skopt', 'optuna'):
-            raise ValueError("return_optimization=True only valid if method='skopt' or method='optuna'")
+            raise ValueError(
+                "return_optimization=True only valid if method='skopt' or method='optuna'"
+            )
 
         def _tuple(x):
             return x if isinstance(x, Sequence) and not isinstance(x, str) else (x,)

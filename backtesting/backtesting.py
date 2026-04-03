@@ -1305,9 +1305,11 @@ class Backtest:
         `optuna_sampler` selects the Optuna sampler algorithm.
         Options: ``"tpe"`` (default), ``"cmaes"``, ``"random"``.
 
-        `progress_callback` is an optional function called after each Optuna trial
-        with signature ``(current_trial: int, max_trials: int, current_value: float)``.
+        `progress_callback` is an optional function called after each trial
+        when using ``method='optuna'``. Signature:
+        ``(current_trial: int, max_trials: int, current_value: float)``.
         ``current_value`` is ``float('nan')`` for pruned trials.
+        Ignored for other methods.
 
         `max_tries` is the maximal number of strategy runs to perform.
         If `max_tries` is a floating value between (0, 1], this sets the
@@ -1602,17 +1604,16 @@ class Backtest:
             )
 
             # Resume logic: max_tries is total count
-            nonlocal max_tries
-            max_tries = (200 if max_tries is None else
-                         max(1, int(max_tries * _grid_size())) if 0 < max_tries <= 1 else
-                         int(max_tries))
+            total_tries = (200 if max_tries is None else
+                           max(1, int(max_tries * _grid_size())) if 0 < max_tries <= 1 else
+                           int(max_tries))
 
             existing = len([
                 t for t in study.trials
                 if t.state in (optuna.trial.TrialState.COMPLETE,
                                optuna.trial.TrialState.PRUNED)
             ])
-            remaining = max(0, max_tries - existing)
+            remaining = max(0, total_tries - existing)
 
             # Objective
             def objective(trial: optuna.trial.Trial):
@@ -1650,7 +1651,7 @@ class Backtest:
                 if progress_callback is None:
                     return
                 value = trial.value if trial.value is not None else float('nan')
-                progress_callback(len(study.trials), max_tries, value)
+                progress_callback(len(study.trials), total_tries, value)
 
             # Run optimization
             if remaining > 0:

@@ -1571,12 +1571,20 @@ class Backtest:
 
             optuna.logging.set_verbosity(optuna.logging.WARNING)
 
+            if return_heatmap:
+                raise ValueError("return_heatmap not supported with method='optuna'")
+
+            if outcome_constraints:
+                raise ValueError("outcome_constraints not supported with method='optuna'")
+
             # Sampler
             sampler_map = {
                 'tpe': optuna.samplers.TPESampler,
                 'cmaes': optuna.samplers.CmaEsSampler,
                 'random': optuna.samplers.RandomSampler,
             }
+            if optuna_sampler not in sampler_map:
+                raise ValueError(f"optuna_sampler must be one of {list(sampler_map)!r}, not {optuna_sampler!r}")
             sampler = sampler_map[optuna_sampler](seed=random_state)
 
             # Study name

@@ -1177,3 +1177,10 @@ class TestRegressions(TestCase):
         trades = Backtest(SHORT_DATA, S).run()._trades
         self.assertEqual(trades['SL'].fillna(0).tolist(), [0, 99])
         self.assertEqual(trades['TP'].fillna(0).tolist(), [111, 0])
+
+    def test_avg_drawdown_buy_and_hold(self):
+        stats = Backtest(GOOG, SmaCross).run()
+        self.assertIn('Avg. Drawdown Buy & Hold [%]', stats.index)
+        self.assertIsInstance(stats['Avg. Drawdown Buy & Hold [%]'], float)
+        self.assertTrue(stats['Avg. Drawdown Buy & Hold [%]'] < 0,
+                        "Avg drawdown should be negative")

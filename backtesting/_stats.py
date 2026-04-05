@@ -47,6 +47,9 @@ def compute_stats(
     dd = 1 - equity / np.maximum.accumulate(equity)
     dd_dur, dd_peaks = compute_drawdown_duration_peaks(pd.Series(dd, index=index))
 
+    dd_asset = 1 - ohlc_data.Close.values / np.maximum.accumulate(ohlc_data.Close.values)
+    dd_dur_asset, dd_peaks_asset = compute_drawdown_duration_peaks(pd.Series(dd_asset, index=index))
+
     equity_df = pd.DataFrame({
         'Equity': equity,
         'DrawdownPct': dd,
@@ -165,6 +168,7 @@ def compute_stats(
     s.loc['Beta'] = beta
     s.loc['Max. Drawdown [%]'] = max_dd * 100
     s.loc['Avg. Drawdown [%]'] = -dd_peaks.mean() * 100
+    s.loc['Avg. Drawdown Buy & Hold [%]'] = -dd_peaks_asset.mean() * 100
     s.loc['Max. Drawdown Duration'] = _round_timedelta(dd_dur.max())
     s.loc['Avg. Drawdown Duration'] = _round_timedelta(dd_dur.mean())
     s.loc['# Trades'] = n_trades = len(trades_df)

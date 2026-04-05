@@ -82,6 +82,19 @@ class TestBacktest(TestCase):
         bt = Backtest(EURUSD, SmaCross)
         bt.run()
 
+    def test_run_fixed_params(self):
+        """fixed_params should override strategy class attributes during run."""
+        stats = Backtest(GOOG, SmaCross).run(fixed_params={'fast': 5})
+        self.assertEqual(stats['_strategy'].fast, 5)
+
+    def test_optimize_fixed_params(self):
+        """fixed_params should be forwarded to run() during optimization."""
+        stats = Backtest(GOOG, SmaCross).optimize(
+            slow=range(10, 30, 5),
+            fixed_params={'fast': 5}
+        )
+        self.assertEqual(stats['_strategy'].fast, 5)
+
     def test_run_invalid_param(self):
         bt = Backtest(GOOG, SmaCross)
         self.assertRaises(AttributeError, bt.run, foo=3)

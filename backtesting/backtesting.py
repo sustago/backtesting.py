@@ -1240,7 +1240,7 @@ class Backtest:
         self._results: Optional[pd.Series] = None
         self._finalize_trades = bool(finalize_trades)
 
-    def run(self, **kwargs) -> pd.Series:
+    def run(self, *, fixed_params: dict | None = None, **kwargs) -> pd.Series:
         """
         Run the backtest. Returns `pd.Series` with results and statistics.
 
@@ -1293,6 +1293,8 @@ class Backtest:
         data = _Data(self._data.copy(deep=False))
         broker: _Broker = self._broker(data=data)
         strategy: Strategy = self._strategy(broker, data, kwargs)
+        if fixed_params:
+            strategy._check_params(fixed_params)
 
         strategy.init()
         data._update()  # Strategy.init might have changed/added to data.df
@@ -1363,6 +1365,7 @@ class Backtest:
                  return_heatmap: bool = False,
                  return_optimization: bool = False,
                  random_state: Optional[int] = None,
+                 fixed_params: dict | None = None,
                  **kwargs) -> Union[pd.Series,
                                     Tuple[pd.Series, pd.Series],
                                     Tuple[pd.Series, pd.Series, dict]]:
@@ -1513,7 +1516,7 @@ class Backtest:
                     bt = copy(self)  # bt._data will be reassigned in _mp_task worker
                 results = _tqdm(
                     pool.imap(Backtest._mp_task,
-                              ((bt, smm.df2shm(self._data), params_batch)
+                              ((bt, smm.df2shm(self._data), params_batch, fixed_params)
                                for params_batch in _batch(param_combos))),
                     total=len(param_combos),
                     desc='Backtest.optimize'
@@ -1526,10 +1529,10 @@ class Backtest:
             if pd.isnull(heatmap).all():
                 # No trade was made in any of the runs. Just make a random
                 # run so we get some, if empty, results
-                stats = self.run(**param_combos[0])
+                stats = self.run(**param_combos[0], fixed_params=fixed_params)
             else:
                 best_params = heatmap.idxmax(skipna=True)
-                stats = self.run(**dict(zip(heatmap.index.names, best_params)))
+                stats = self.run(**dict(zip(heatmap.index.names, best_params)), fixed_params=fixed_params)
 
             if return_heatmap:
                 return stats, heatmap
@@ -1567,7 +1570,7 @@ class Backtest:
             @lru_cache()
             def memoized_run(tup):
                 nonlocal maximize, self
-                stats = self.run(**dict(tup))
+                stats = self.run(**dict(tup), fixed_params=fixed_params)
                 return -maximize(stats)
 
             progress = iter(_tqdm(repeat(None), total=max_tries, leave=False,
@@ -1592,7 +1595,7 @@ class Backtest:
                 method='sceua',
                 rng=random_state)
 
-            stats = self.run(**dict(zip(kwargs.keys(), res.x)))
+            stats = self.run(**dict(zip(kwargs.keys(), res.x)), fixed_params=fixed_params)
             output = [stats]
 
             if return_heatmap:
@@ -1617,11 +1620,12 @@ class Backtest:
 
     @staticmethod
     def _mp_task(arg):
-        bt, data_shm, params_batch = arg
+        bt, data_shm, params_batch, *rest = arg
+        fixed_params = rest[0] if rest else None
         bt._data, shm = SharedMemoryManager.shm2df(data_shm)
         try:
             return [stats.filter(regex='^[^_]') if stats['# Trades'] else None
-                    for stats in (bt.run(**params)
+                    for stats in (bt.run(**params, fixed_params=fixed_params)
                                   for params in params_batch)]
         finally:
             for shmem in shm:

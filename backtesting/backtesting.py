@@ -16,7 +16,7 @@ from abc import ABCMeta, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from copy import copy
 from functools import lru_cache, partial
-from itertools import chain, compress, product, repeat
+from itertools import chain, compress, count, product, repeat
 from numbers import Number
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Type, Union, Literal
 
@@ -1306,10 +1306,9 @@ class Backtest:
         Options: ``"tpe"`` (default), ``"cmaes"``, ``"random"``.
 
         `progress_callback` is an optional function called after each trial
-        when using ``method='optuna'``. Signature:
+        when using ``method='optuna'`` or ``method='openbox'``. Signature:
         ``(current_trial: int, max_trials: int, current_value: float)``.
-        ``current_value`` is ``float('nan')`` for pruned trials.
-        Ignored for other methods.
+        ``current_value`` is ``float('nan')`` for infeasible/pruned trials.
 
         `max_tries` is the maximal number of strategy runs to perform.
         If `max_tries` is a floating value between (0, 1], this sets the
@@ -1455,9 +1454,12 @@ class Backtest:
             space = sp.Space(seed=random_state)
             space.add_variables(variables)
 
+            _openbox_trial_counter = count(1)
+
             def eval_run(config: sp.Configuration):
                 value = 0.0
                 res = None
+                callback_value = float('nan')
 
                 params = config.get_dictionary()
                 params_feasible = constraint(AttrDict(params))
@@ -1466,6 +1468,8 @@ class Backtest:
                     value = -maximize(res)
                     if np.isnan(value):
                         value = 0.0
+                    else:
+                        callback_value = -value
 
                 outcome_constraints_values = (
                     [
@@ -1482,6 +1486,10 @@ class Backtest:
                 unsatisfied_constraints = [cv for cv in outcome_constraints_values if cv > 0]
                 if not use_constrained_model and len(unsatisfied_constraints):
                     value = sum(unsatisfied_constraints)
+                    callback_value = float('nan')
+
+                if progress_callback is not None:
+                    progress_callback(next(_openbox_trial_counter), max_tries, callback_value)
 
                 result = dict()
                 result['objectives'] = [value,]

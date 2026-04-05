@@ -1367,6 +1367,10 @@ class Backtest:
                  return_optimization: bool = False,
                  random_state: Optional[int] = None,
                  fixed_params: dict | None = None,
+                 optuna_storage: Optional[str] = None,
+                 optuna_study_name: Optional[str] = None,
+                 optuna_sampler: str = 'tpe',
+                 progress_callback: Optional[Callable[[int, int, float], None]] = None,
                  **kwargs) -> Union[pd.Series,
                                     Tuple[pd.Series, pd.Series],
                                     Tuple[pd.Series, pd.Series, dict]]:
@@ -1386,8 +1390,12 @@ class Backtest:
           cartesian product of parameter combinations, and
         * `"sambo"` which finds close-to-optimal strategy parameters using
           [model-based optimization], making at most `max_tries` evaluations.
+        * `"optuna"` which uses [Optuna] for Bayesian optimization,
+          making at most `max_tries` evaluations. Supports persistent
+          storage and study resumption.
 
         [model-based optimization]: https://sambo-optimization.github.io
+        [Optuna]: https://optuna.org
 
         `max_tries` is the maximal number of strategy runs to perform.
         If `method="grid"`, this results in randomized grid search.
@@ -1419,6 +1427,21 @@ class Backtest:
 
         If you want reproducible optimization results, set `random_state`
         to a fixed integer random seed.
+
+        `optuna_storage` is an optional SQLAlchemy-compatible database URL
+        (e.g. ``"sqlite:///study.db"``) for persisting Optuna studies.
+        Only valid with ``method="optuna"``.
+
+        `optuna_study_name` is the name for the Optuna study. If not
+        provided, a name is auto-generated. Only valid with ``method="optuna"``.
+
+        `optuna_sampler` selects the Optuna sampling algorithm:
+        ``"tpe"`` (default), ``"cmaes"``, or ``"random"``.
+        Only valid with ``method="optuna"``.
+
+        `progress_callback` is an optional callable
+        ``(current_trial, max_trials, best_value)`` called after each
+        optimization trial. Currently only supported with ``method="optuna"``.
 
         Additional keyword arguments represent strategy arguments with
         list-like collections of possible values. For example, the following
@@ -1463,8 +1486,23 @@ class Backtest:
             method = 'sambo'
             warnings.warn('`Backtest.optimize(method="skopt")` is deprecated. Use `method="sambo"`.',
                           DeprecationWarning, stacklevel=2)
-        if return_optimization and method != 'sambo':
-            raise ValueError("return_optimization=True only valid if method='sambo'")
+        if return_optimization and method not in ('sambo', 'optuna'):
+            raise ValueError("return_optimization=True only valid if method='sambo' or method='optuna'")
+
+        if method != 'optuna':
+            if optuna_storage is not None:
+                raise ValueError("optuna_storage is only valid with method='optuna'")
+            if optuna_study_name is not None:
+                raise ValueError("optuna_study_name is only valid with method='optuna'")
+            if optuna_sampler != 'tpe':
+                raise ValueError("optuna_sampler is only valid with method='optuna'")
+
+        if method == 'optuna':
+            if return_heatmap:
+                raise ValueError("return_heatmap is not supported with method='optuna'")
+            if optuna_sampler not in ('tpe', 'cmaes', 'random'):
+                raise ValueError(f"optuna_sampler must be 'tpe', 'cmaes', or 'random', "
+                                 f"not {optuna_sampler!r}")
 
         def _tuple(x):
             return x if isinstance(x, Sequence) and not isinstance(x, str) else (x,)
@@ -1611,12 +1649,99 @@ class Backtest:
 
             return stats if len(output) == 1 else tuple(output)
 
+        def _optimize_optuna():
+            try:
+                import optuna
+            except ImportError:
+                raise ImportError(
+                    "Need package 'optuna' for method='optuna'. "
+                    "pip install optuna"
+                ) from None
+
+            optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+            nonlocal max_tries
+            max_tries = (200 if max_tries is None else
+                         max(1, int(max_tries * _grid_size())) if 0 < max_tries <= 1 else
+                         int(max_tries))
+
+            # Configure sampler
+            sampler_map = {
+                'tpe': lambda: optuna.samplers.TPESampler(seed=random_state),
+                'cmaes': lambda: optuna.samplers.CmaEsSampler(seed=random_state),
+                'random': lambda: optuna.samplers.RandomSampler(seed=random_state),
+            }
+            sampler = sampler_map[optuna_sampler]()
+
+            # Create or load study
+            from time import time
+            study_name = optuna_study_name
+            if study_name is None:
+                study_name = f'bt_{self._strategy.__name__}_{int(time()):x}'
+
+            study = optuna.create_study(
+                study_name=study_name,
+                storage=optuna_storage,
+                direction='maximize',
+                sampler=sampler,
+                load_if_exists=True,
+            )
+
+            # If resuming, reduce remaining trials
+            existing = sum(1 for t in study.trials
+                          if t.state == optuna.trial.TrialState.COMPLETE)
+            remaining = max(0, max_tries - existing)
+
+            param_names = list(kwargs.keys())
+
+            def objective(trial):
+                params = {}
+                for name in param_names:
+                    values = list(_tuple(kwargs[name]))
+                    params[name] = trial.suggest_categorical(name, values)
+
+                if not constraint(AttrDict(params)):
+                    raise optuna.TrialPruned()
+
+                stats = self.run(**params, fixed_params=fixed_params)
+                value = maximize(stats)
+                return value if not np.isnan(value) else float('-inf')
+
+            trial_count = 0
+
+            def _optuna_callback(study, trial):
+                nonlocal trial_count
+                trial_count += 1
+                if progress_callback is not None:
+                    try:
+                        best_value = study.best_value
+                    except ValueError:
+                        best_value = float('nan')
+                    progress_callback(trial_count, max_tries, best_value)
+
+            study.optimize(
+                objective,
+                n_trials=remaining,
+                callbacks=[_optuna_callback],
+            )
+
+            best_params = study.best_params
+            stats = self.run(**best_params, fixed_params=fixed_params)
+            output = [stats]
+
+            if return_optimization:
+                output.append(study)
+
+            return stats if len(output) == 1 else tuple(output)
+
         if method == 'grid':
             output = _optimize_grid()
         elif method in ('sambo', 'skopt'):
             output = _optimize_sambo()
+        elif method == 'optuna':
+            output = _optimize_optuna()
         else:
-            raise ValueError(f"Method should be 'grid' or 'sambo', not {method!r}")
+            raise ValueError(f"Method should be 'grid', 'sambo', or 'optuna', not {method!r}")
         return output
 
     @staticmethod

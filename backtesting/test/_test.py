@@ -95,6 +95,20 @@ class TestBacktest(TestCase):
         )
         self.assertEqual(stats['_strategy'].fast, 5)
 
+    def test_method_optuna(self):
+        try:
+            import optuna  # noqa: F401
+        except ImportError:
+            self.skipTest("Optuna not installed")
+        stats = Backtest(GOOG, SmaCross).optimize(
+            fast=range(2, 10),
+            slow=range(10, 30),
+            method='optuna',
+            max_tries=20
+        )
+        self.assertIsInstance(stats, pd.Series)
+        self.assertIn('SQN', stats.index)
+
     def test_run_invalid_param(self):
         bt = Backtest(GOOG, SmaCross)
         self.assertRaises(AttributeError, bt.run, foo=3)

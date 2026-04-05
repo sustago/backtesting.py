@@ -109,6 +109,95 @@ class TestBacktest(TestCase):
         self.assertIsInstance(stats, pd.Series)
         self.assertIn('SQN', stats.index)
 
+    def test_method_optuna_return_study(self):
+        try:
+            import optuna
+        except ImportError:
+            self.skipTest("Optuna not installed")
+        stats, study = Backtest(GOOG, SmaCross).optimize(
+            fast=range(2, 10),
+            slow=range(10, 30),
+            method='optuna',
+            max_tries=10,
+            return_optimization=True
+        )
+        self.assertIsInstance(stats, pd.Series)
+        self.assertIsInstance(study, optuna.study.Study)
+        self.assertGreater(len(study.trials), 0)
+
+    def test_method_optuna_resume(self):
+        try:
+            import optuna
+        except ImportError:
+            self.skipTest("Optuna not installed")
+        import tempfile, os
+        db_path = os.path.join(tempfile.gettempdir(), 'test_optuna_resume.db')
+        storage = f'sqlite:///{db_path}'
+        study_name = 'test_resume'
+        try:
+            # First run: 10 trials
+            Backtest(GOOG, SmaCross).optimize(
+                fast=range(2, 10), slow=range(10, 30),
+                method='optuna', max_tries=10,
+                optuna_storage=storage, optuna_study_name=study_name
+            )
+            # Second run: 20 total, should only do 10 more
+            stats, study = Backtest(GOOG, SmaCross).optimize(
+                fast=range(2, 10), slow=range(10, 30),
+                method='optuna', max_tries=20,
+                optuna_storage=storage, optuna_study_name=study_name,
+                return_optimization=True
+            )
+            completed = sum(1 for t in study.trials
+                            if t.state == optuna.trial.TrialState.COMPLETE)
+            self.assertEqual(completed, 20)
+        finally:
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+
+    def test_method_optuna_progress_callback(self):
+        try:
+            import optuna  # noqa: F401
+        except ImportError:
+            self.skipTest("Optuna not installed")
+        calls = []
+        def callback(current, total, value):
+            calls.append((current, total, value))
+        Backtest(GOOG, SmaCross).optimize(
+            fast=range(2, 10), slow=range(10, 30),
+            method='optuna', max_tries=5,
+            progress_callback=callback
+        )
+        self.assertEqual(len(calls), 5)
+        self.assertEqual(calls[-1][0], 5)
+        self.assertEqual(calls[-1][1], 5)
+
+    def test_method_optuna_samplers(self):
+        try:
+            import optuna  # noqa: F401
+        except ImportError:
+            self.skipTest("Optuna not installed")
+        for sampler in ('tpe', 'cmaes', 'random'):
+            stats = Backtest(GOOG, SmaCross).optimize(
+                fast=range(2, 10), slow=range(10, 30),
+                method='optuna', max_tries=5,
+                optuna_sampler=sampler
+            )
+            self.assertIsInstance(stats, pd.Series)
+
+    def test_method_optuna_fixed_params(self):
+        try:
+            import optuna  # noqa: F401
+        except ImportError:
+            self.skipTest("Optuna not installed")
+        stats = Backtest(GOOG, SmaCross).optimize(
+            slow=range(10, 30),
+            method='optuna',
+            max_tries=5,
+            fixed_params={'fast': 5}
+        )
+        self.assertEqual(stats['_strategy'].fast, 5)
+
     def test_run_invalid_param(self):
         bt = Backtest(GOOG, SmaCross)
         self.assertRaises(AttributeError, bt.run, foo=3)

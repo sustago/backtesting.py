@@ -72,6 +72,7 @@ Alpha [%]                              450.62
 Beta                                     0.02
 Max. Drawdown [%]                      -33.08
 Avg. Drawdown [%]                       -5.58
+Avg. Drawdown Buy & Hold [%]            -5.45
 Max. Drawdown Duration      688 days 00:00:00
 Avg. Drawdown Duration       41 days 00:00:00
 # Trades                                   93

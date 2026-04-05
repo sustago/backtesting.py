@@ -1265,6 +1265,7 @@ class Backtest:
             Beta                                  0.03803
             Max. Drawdown [%]                   -47.98013
             Avg. Drawdown [%]                    -5.92585
+            Avg. Drawdown Buy & Hold [%]         -5.44945
             Max. Drawdown Duration      584 days 00:00:00
             Avg. Drawdown Duration       41 days 00:00:00
             # Trades                                   66

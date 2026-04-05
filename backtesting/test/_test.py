@@ -356,6 +356,7 @@ class TestBacktest(TestCase):
                 'Worst Trade [%]': -18.39887353835481,
                 'Alpha [%]': 394.37391142027462,
                 'Beta': 0.03803390709192,
+                'Avg. Drawdown Buy & Hold [%]': -5.44944935340632,
         })
 
         def almost_equal(a, b):
